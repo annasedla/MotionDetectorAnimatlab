@@ -12,8 +12,13 @@ import cv2
 # Constant for pixel differences
 CONSTANT = 1
 
+# Size of the header for a message to be sent over
+HEADER_SIZE = 3
+DATA_SIZE = 3
+FOOTER_SIZE = 1
+
 # Number of loops
-loops = 90
+loops = 10
 
 # Serial communication
 ser = serial.Serial('/dev/serial0')
@@ -27,8 +32,6 @@ currentPic = []
 
 # Array to be storing the average values
 current = [0] * 64
-
-
 
 class ImageProcessor(threading.Thread):
     def __init__(self, owner):
@@ -61,7 +64,7 @@ class ImageProcessor(threading.Thread):
                         # Darkest spot in the view
                         sum = 0
 
-                        for x in range(1, 64):
+                        for x in range(0, 64):
                             currentPic[x,y] =  currentPic[x,y]/16
 
                             # Sum the values
@@ -73,31 +76,71 @@ class ImageProcessor(threading.Thread):
                     # Reset the sum after terminating the loop     
                     sum = 0
 
-                    movement = False;
+                    # Start with movement equal to false
+                    movement = False
+
+                    # Number of changed elements from one image to another
+                    movementLength = 0
+
+                    # Start with checksum equal to zero
+                    checksum = 0
+
+                    # Size of the data to be sent over
+                    size = 0
 
                     # Run a loop for array difference
                     for x in range (0,64):
                         if abs(current[x] - previous[x]) > CONSTANT:
-                            print ("Movement");
-                            ser.write('hello')
-                            movement = True;
-                            break;
-                        
+                            
+                            movementLength++
+                            movement = True
+
+                    # Initializer
+                    ser.open()
+                    print("Initializing the controller...")
+                    
+                    # Send the header
+                    ser.write(bytes(0XFF))
+                    ser.write(bytes(0XFF))
+                    ser.write(bytes(0X01))
+
+                    # Add it to the checksum
+                    checksum = 0XFF + 0XFF + 0X01
+                    
+                    # Compute the size of the entire message
+                    size = HEADER_SIZE  + movementLength * DATA_SIZE + FOOTER_SIZE
+
+                    # Write the size of everything
+                    ser.write(bytes(size))
+
+                    # Add it to checksum again
+                    checksum += size
+
+                    for x in range (0, 64):
+                        if abs(current[x] - previous[x]) > CONSTANT:
+
+                            # ID
+                            ser.write(bytes(x))
+
+                            # low byte
+                            ser.write(bytes(current[x]))
+
+                            # high byte
+                            ser.write(bytes(0))
+
+                            checksum += x + current[x]
+
+                    # Module checksum and send it
+                    checksum = checksum % 256
+
+                    # Lastly send the checksum
+                    ser.write(bytes(checksum))
+
                     if movement == False:
-                        print ("still");
+                        print ("still")
                     else:
-                        movement = False;
-
-
-                    # Compare current to previous
-                    #if np.array_equal(current, previous) == False:
-                     #   if i != 0:
-                     #       print ("MOVEMENT")
-                    i#f np.array_equal(current, previous):
-                     #   print ("Still.")
-
-                    # Set done to True if you want the script to terminate
-                    # at some point
+                        movement = False
+                        
                     if (i==loops - 1):
                         self.owner.done = True
 
