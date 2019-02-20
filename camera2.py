@@ -23,7 +23,8 @@ loops = 10
 # Serial communication
 ser = serial.Serial('/dev/serial0')
 ser.baudrate = 19200
-
+#ser.open()
+                    
 # Start a timer for analysis
 start = time.time()
 
@@ -92,49 +93,58 @@ class ImageProcessor(threading.Thread):
                     for x in range (0,64):
                         if abs(current[x] - previous[x]) > CONSTANT:
                             
-                            movementLength++
+                            movementLength = movementLength + 1
                             movement = True
 
                     # Initializer
-                    ser.open()
-                    print("Initializing the controller...")
-                    
-                    # Send the header
-                    ser.write(bytes(0XFF))
-                    ser.write(bytes(0XFF))
-                    ser.write(bytes(0X01))
+                    if movement == True:
 
-                    # Add it to the checksum
-                    checksum = 0XFF + 0XFF + 0X01
-                    
-                    # Compute the size of the entire message
-                    size = HEADER_SIZE  + movementLength * DATA_SIZE + FOOTER_SIZE
+                        print("Initializing the controller...")
+                        
+                        # Send the header
+                        ser.write("Header: ")
+                        ser.write(bytes(0XFF))
+                        ser.write(bytes(0XFF))
+                        ser.write(bytes(0X01))
 
-                    # Write the size of everything
-                    ser.write(bytes(size))
+                        # Add it to the checksum
+                        checksum = 0XFF + 0XFF + 0X01
+                        
+                        # Compute the size of the entire message
+                        size = HEADER_SIZE  + movementLength * DATA_SIZE + FOOTER_SIZE
 
-                    # Add it to checksum again
-                    checksum += size
+                        
+                        # Write the size of everything
+                        ser.write(" Size: ")
+                        ser.write(bytes(size))
 
-                    for x in range (0, 64):
-                        if abs(current[x] - previous[x]) > CONSTANT:
+                        # Add it to checksum again
+                        checksum += size
 
-                            # ID
-                            ser.write(bytes(x))
+                        for x in range (0, 64):
+                            if abs(current[x] - previous[x]) > CONSTANT:
 
-                            # low byte
-                            ser.write(bytes(current[x]))
+                                # ID
+                                ser.write(" ID: ")
+                                ser.write(bytes(x))
 
-                            # high byte
-                            ser.write(bytes(0))
+                                # low byte
+                                ser.write(" lowbyte: ")
+                                ser.write(bytes(current[x]))
 
-                            checksum += x + current[x]
+                                # high byte
+                                ser.write( "highbyte: " )
+                                ser.write(bytes(0))
 
-                    # Module checksum and send it
-                    checksum = checksum % 256
+                                checksum += x + current[x]
 
-                    # Lastly send the checksum
-                    ser.write(bytes(checksum))
+                        # Module checksum and send it
+                        checksum = checksum % 256
+
+                        # Lastly send the checksum
+                        ser.write( "checksum: ")
+                        ser.write(bytes(checksum))
+                        ser.write(" ----------------------- ")
 
                     if movement == False:
                         print ("still")
