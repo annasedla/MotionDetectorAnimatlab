@@ -18,15 +18,16 @@ DATA_SIZE = 3
 FOOTER_SIZE = 1
 
 # Number of loops
-loops = 10
-
+loops = 100
+ 
 # Serial communication
 ser = serial.Serial('/dev/serial0')
-ser.baudrate = 19200
+ser.baudrate = 115200
 #ser.open()
                     
 # Start a timer for analysis
-start = time.time()
+then = 0
+ROBOT_TIME_STEP = 0.1
 
 # Array to be storing analyzed images
 currentPic = []
@@ -44,124 +45,143 @@ class ImageProcessor(threading.Thread):
         self.start()
 
     def run(self):
-        # This method runs in a separate thread
-        for i in range(0,loops):
-            # Wait for an image to be written to the stream
-            if self.event.wait(1):
-                try:
-                    self.stream.seek(0)
-           # Read the image and do some processing on it
-                    image = Image.open(self.stream).convert('L')
 
-                    # Load it to the current array
-                    currentPic = image.load()
+        try: 
+            # This method runs in a separate thread
+            while True:
+                # Wait for an image to be written to the stream
+                if self.event.wait(1):
+                    try:
+                        self.stream.seek(0)
+               # Read the image and do some processing on it
+                        image = Image.open(self.stream).convert('L')
 
-                    # Set previous to current
-                    previous = current[:]
+                        # Load it to the current array
+                        currentPic = image.load()
 
-                    # Convert to 4 bit
-                    for y in range(0, 64):
+                        # Set previous to current
+                        previous = current[:]
 
-                        # Darkest spot in the view
+                        # Convert to 4 bit
+                        for y in range(0, 64):
+
+                            # Darkest spot in the view
+                            sum = 0
+
+                            for x in range(0, 64):
+                                currentPic[x,y] =  currentPic[x,y]/16
+
+                                # Sum the values
+                                sum = sum + currentPic[x,y]
+
+                                # Store the average in the dark array
+                                current[y] = sum/64
+                        
+                        # Reset the sum after terminating the loop     
                         sum = 0
 
-                        for x in range(0, 64):
-                            currentPic[x,y] =  currentPic[x,y]/16
-
-                            # Sum the values
-                            sum = sum + currentPic[x,y]
-
-                            # Store the average in the dark array
-                            current[y] = sum/64
-                    
-                    # Reset the sum after terminating the loop     
-                    sum = 0
-
-                    # Start with movement equal to false
-                    movement = False
-
-                    # Number of changed elements from one image to another
-                    movementLength = 0
-
-                    # Start with checksum equal to zero
-                    checksum = 0
-
-                    # Size of the data to be sent over
-                    size = 0
-
-                    # Run a loop for array difference
-                    for x in range (0,64):
-                        if abs(current[x] - previous[x]) > CONSTANT:
-                            
-                            movementLength = movementLength + 1
-                            movement = True
-
-                    # Initializer
-                    if movement == True:
-
-                        print("Initializing the controller...")
-                        
-                        # Send the header
-                        ser.write("Header: ")
-                        ser.write(bytes(0XFF))
-                        ser.write(bytes(0XFF))
-                        ser.write(bytes(0X01))
-
-                        # Add it to the checksum
-                        checksum = 0XFF + 0XFF + 0X01
-                        
-                        # Compute the size of the entire message
-                        size = HEADER_SIZE  + movementLength * DATA_SIZE + FOOTER_SIZE
-
-                        
-                        # Write the size of everything
-                        ser.write(" Size: ")
-                        ser.write(bytes(size))
-
-                        # Add it to checksum again
-                        checksum += size
-
-                        for x in range (0, 64):
-                            if abs(current[x] - previous[x]) > CONSTANT:
-
-                                # ID
-                                ser.write(" ID: ")
-                                ser.write(bytes(x))
-
-                                # low byte
-                                ser.write(" lowbyte: ")
-                                ser.write(bytes(current[x]))
-
-                                # high byte
-                                ser.write( "highbyte: " )
-                                ser.write(bytes(0))
-
-                                checksum += x + current[x]
-
-                        # Module checksum and send it
-                        checksum = checksum % 256
-
-                        # Lastly send the checksum
-                        ser.write( "checksum: ")
-                        ser.write(bytes(checksum))
-                        ser.write(" ----------------------- ")
-
-                    if movement == False:
-                        print ("still")
-                    else:
+                        # Start with movement equal to false
                         movement = False
-                        
-                    if (i==loops - 1):
-                        self.owner.done = True
 
-                finally:
-                    # Reset the stream and event
-                    self.stream.seek(0)
-                    self.stream.truncate()
-                    self.event.clear()
-                    # Return ourselves to the available pool
-                    with self.owner.lock:
-                        self.owner.pool.append(self)
+                        # Number of changed elements from one image to another
+                        movementLength = 0
+
+                        # Start with checksum equal to zero
+                        checksum = 0
+
+                        # Size of the data to be sent over
+                        size = 0
+
+                        # Run a loop for array difference
+                        for x in range (0,64):
+                            if abs(current[x] - previous[x]) > CONSTANT:
+                                
+                                movementLength = movementLength + 1
+                                movement = True
+
+                        # Initializer
+                        if movement == True:
+
+                            #print("movement")
+
+                            now = time.time()
+
+                            global then
+                            time_diff = now - then
+                            #print(time_diff)
+
+                            if time_diff != now:
+                                if time_diff < ROBOT_TIME_STEP:
+                                    time.sleep(ROBOT_TIME_STEP - time_diff)
+                            
+                            # Send the header
+                            #ser.write("Header: ")
+                            ser.write(bytes(0XFF))
+                            ser.write(bytes(0XFF))
+                            ser.write(bytes(0X01))
+
+                            # Add it to the checksum
+                            checksum = 0XFF + 0XFF + 0X01
+                            
+                            # Compute the size of the entire message
+                            size = HEADER_SIZE  + movementLength * DATA_SIZE + FOOTER_SIZE
+
+                            
+                            # Write the size of everything
+                            #ser.write(" Size: ")
+                            ser.write(bytes(size))
+
+                            # Add it to checksum again
+                            checksum += size
+
+                            for x in range (0, 64):
+                                if abs(current[x] - previous[x]) > CONSTANT:
+
+                                    # ID
+                                    #ser.write(" ID: ")
+                                    ser.write(bytes(x))
+
+                                    # low byte
+                                    #ser.write(" lowbyte: ")
+                                    ser.write(bytes(current[x]))
+
+                                    # high byte
+                                    #ser.write( "highbyte: " )
+                                    ser.write(bytes(0))
+
+                                    checksum += x + current[x]
+
+                            # Module checksum and send it
+                            checksum = checksum % 256
+
+                            # Lastly send the checksum
+                            #ser.write( "checksum: ")
+                            ser.write(bytes(checksum))
+                            ser.write(" ----------------------- ")
+
+                            # Starting timer to when the last info was sent
+                            
+                            then = time.time()
+
+                        if movement != False:
+                            movement = False
+                            
+                            
+                        #if (i==loops - 1):
+                        #   self.owner.done = True
+
+                    finally:
+                        # Reset the stream and event
+                        self.stream.seek(0)
+                        self.stream.truncate()
+                        self.event.clear()
+                        # Return ourselves to the available pool
+                        with self.owner.lock:
+                            self.owner.pool.append(self)
+        except KeyboardInterrupt:
+            pass
+            camera.stop_recording()
+            ser.close
 
 class ProcessOutput(object):
     def __init__(self):
