@@ -13,7 +13,7 @@ import cv2
 
 # CONSTANTS
 # Constant for pixel differences
-CONSTANT = 1
+CONSTANT = 0
 
 # width and height of an image
 width, height=64, 64
@@ -41,28 +41,6 @@ currentPic = []
 current = [0] * 64
 
 class ImageProcessor(threading.Thread):
-
-    def makeMask(n):
-        theta = np.linspace((2*math.pi)*(float(n)/64), (2*math.pi)*float(n+1)/64, 5)
-        xCenter = 32;
-        yCenter = 32;
-        radius = 32;
-        x = radius * np.cos(theta) + xCenter;
-        y = radius * np.sin(theta) + yCenter;
-        origin = np.array([xCenter, yCenter])
-        c = np.column_stack((x,y))
-        c = np.row_stack((c,origin))
-        poly_path=Path(c)
-        x, y = np.mgrid[:height, :width]
-        coors=np.hstack((x.reshape(-1, 1), y.reshape(-1,1)))
-        mask = poly_path.contains_points(coors)
-        z = mask.reshape(height, width)
-        z_final = np.where(z == False, 0, 1)
-        num_of_pixels_in_bin = np.count_nonzero(z_final == 1)
-        print("This bin has",num_of_pixels_in_bin,"pixels!")
-
-        return z_final, n_of_pixels_in_bin
-    
     def __init__(self, owner):
         super(ImageProcessor, self).__init__()
         self.stream = io.BytesIO()
@@ -72,6 +50,25 @@ class ImageProcessor(threading.Thread):
         self.start()
 
     def run(self):
+
+        def makeMask(n):
+            theta = np.linspace((2*math.pi)*(float(n)/64), (2*math.pi)*float(n+1)/64, 5)
+            xCenter = 32;
+            yCenter = 32;
+            radius = 32;
+            x = radius * np.cos(theta) + xCenter;
+            y = radius * np.sin(theta) + yCenter;
+            origin = np.array([xCenter, yCenter])
+            c = np.column_stack((x,y))
+            c = np.row_stack((c,origin))
+            poly_path=Path(c)
+            x, y = np.mgrid[:height, :width]
+            coors=np.hstack((x.reshape(-1, 1), y.reshape(-1,1)))
+            mask = poly_path.contains_points(coors)
+            z = mask.reshape(height, width)
+            z_final = np.where(z == False, 0, 1)
+            num_of_pixels_in_bin = np.count_nonzero(z_final == 1)
+            return z_final, num_of_pixels_in_bin
 
         try: 
             # This method runs in a separate thread
@@ -89,12 +86,17 @@ class ImageProcessor(threading.Thread):
                         # Set previous to current
                         previous = current[:]
 
+                        finalPic = np.zeros(shape=(64,64))
+
                         # Convert to 4 bit
                         for x in range(0, 63):
-                            matrix, numPixels = makeMask(x)
+                            for y in range(0, 63):
+                                finalPic[x][y] = currentPic[x,y]/16
 
-                            ray = numpy.multiply(matrix, currentPic)
-                            current[x] = ray.sum()/numPixels
+                        for x in range(0, 63):
+                            matrix, numPixels = makeMask(x)     
+                            ray = np.multiply(matrix, finalPic)
+                            current[x] = int(round(ray.sum()/numPixels))
 
                         # Start with movement equal to false
                         movement = False
@@ -147,7 +149,7 @@ class ImageProcessor(threading.Thread):
 
                             for x in range (0, 63):
                                 if abs(current[x] - previous[x]) > CONSTANT:
-                                    #print(x)
+                                    print(x)
 
                                     # ID
                                     ser.write(bytes(bytearray([x])))
@@ -160,7 +162,7 @@ class ImageProcessor(threading.Thread):
 
                                     checksum += x + current[x] + 0
 
-                            #print ("----------------")
+                            print ("----------------")
 
                             # Module checksum and send it
                             checksum = checksum % 256

@@ -6,7 +6,7 @@ import math
 width, height=64, 64
 
 # This index runs from n = 0 to 63 (one for each angular bin)
-n = 63
+n = 60
 
 theta = np.linspace((2*math.pi)*(float(n)/64), (2*math.pi)*float(n+1)/64, 5)
 print((2*math.pi)*(n/64))
