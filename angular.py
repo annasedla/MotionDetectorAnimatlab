@@ -10,6 +10,7 @@ import pylab as plt
 from matplotlib.path import Path
 import math
 import cv2
+import os
 
 # CONSTANTS
 # Constant for pixel differences
@@ -27,7 +28,7 @@ FOOTER_SIZE = 1
 loops = 100   
  
 # Serial communication
-ser = serial.Serial('/dev/serial0')
+ser = serial.Serial("/dev/serial0")
 ser.baudrate = 115200
                     
 # Start a timer for analysis
@@ -76,6 +77,7 @@ class ImageProcessor(threading.Thread):
                 # Wait for an image to be written to the stream
                 if self.event.wait(1):
                     try:
+                        start=time.time()
                         self.stream.seek(0)
                         # Read the image and do some processing on it
                         image = Image.open(self.stream).convert('L')
@@ -149,7 +151,7 @@ class ImageProcessor(threading.Thread):
 
                             for x in range (0, 63):
                                 if abs(current[x] - previous[x]) > CONSTANT:
-                                    print(x)
+                                    #print(x)
 
                                     # ID
                                     ser.write(bytes(bytearray([x])))
@@ -176,6 +178,9 @@ class ImageProcessor(threading.Thread):
 
                         if movement != False:
                             movement = False
+
+                        end = time.time()
+                        print (end - start)
 
                     finally:
                         # Reset the stream and event

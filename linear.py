@@ -17,11 +17,14 @@ HEADER_SIZE = 4
 DATA_SIZE = 3
 FOOTER_SIZE = 1
 
+
+#COPIED
+
 # Number of loops
 loops = 100   
  
 # Serial communication
-ser = serial.Serial('/dev/serial0')
+ser = serial.Serial("/dev/serial0")
 ser.baudrate = 115200
                     
 # Start a timer for analysis
@@ -64,17 +67,19 @@ class ImageProcessor(threading.Thread):
                         # Convert to 4 bit
                         for x in range(0, 63):
 
-                            # Darkest spot in the view
                             sum = 0
 
+                            # Darkest spot in the view
                             for y in range(0, 63):
                                 currentPic[x,y] =  currentPic[x,y]/16
 
                                 # Sum the values
                                 sum = sum + currentPic[x,y]
 
-                                # Store the average in the dark array
-                                current[x] = sum/64
+                            # Store the average in the dark array
+                            current[x] = sum/64
+                            print(current[x])
+                        print('-------------------')
 
                         # Start with movement equal to false
                         movement = False
@@ -97,6 +102,8 @@ class ImageProcessor(threading.Thread):
 
                         # Initializer
                         if movement == True:
+
+                            print('detected movement')
 
                             now = time.time()
 
@@ -141,7 +148,7 @@ class ImageProcessor(threading.Thread):
 
                                     checksum += x + current[x] + 0
 
-                            #print ("----------------")
+                      
 
                             # Module checksum and send it
                             checksum = checksum % 256
