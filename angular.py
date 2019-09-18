@@ -1,3 +1,6 @@
+import time
+import picamera
+import numpy as np
 import serial
 import io
 import time
@@ -6,248 +9,162 @@ import picamera
 from PIL import Image
 import numpy as np
 import argparse
-import pylab as plt
-from matplotlib.path import Path
-import math
 import cv2
-import os
+import sys
+import math
+from matplotlib.path import Path
 
-# CONSTANTS
-# Constant for pixel differences
-CONSTANT = 0
+# print settings
+np.set_printoptions(threshold=sys.maxsize)
 
-# width and height of an image
-width, height=64, 64
+class ImageProcessor():
+     
+    def makeMask(self, n):
+        theta = np.linspace((2*math.pi)*(float(n)/64), (2*math.pi)*float(n+1)/64, 5)
+        xCenter = 32;
+        yCenter = 32;
+        radius = 32;
+        x = radius * np.cos(theta) + xCenter;
+        y = radius * np.sin(theta) + yCenter;
+        origin = np.array([xCenter, yCenter])
+        c = np.column_stack((x,y))
+        c = np.row_stack((c,origin))
+        poly_path=Path(c)
+        x, y = np.mgrid[:height, :width]
+        coors=np.hstack((x.reshape(-1, 1), y.reshape(-1,1)))
+        mask = poly_path.contains_points(coors)
+        z = mask.reshape(height, width)
+        z_final = np.where(z == False, 0, 1)
+        num_of_pixels_in_bin = np.count_nonzero(z_final == 1)
+        return z_final, num_of_pixels_in_bin
 
-# Size of the header for a message to be sent over
-HEADER_SIZE = 4
-DATA_SIZE = 3
-FOOTER_SIZE = 1
+    if __name__ == '__main__':
+        main()
 
-# Number of loops
-loops = 100   
- 
-# Serial communication
-ser = serial.Serial("/dev/serial0")
-ser.baudrate = 115200
-                    
-# Start a timer for analysis
-then = 0
-ROBOT_TIME_STEP = 0.1
+    def main():
 
-# Array to be storing analyzed images
-currentPic = []
+        # CONSTANTS
+        # Constant for pixel differences
+        CONSTANT = 1
 
-# Array to be storing the average values
-current = [0] * 64
+        # Size of the header for a message to be sent over
+        HEADER_SIZE = 4
+        DATA_SIZE = 3
+        FOOTER_SIZE = 1
+        ROBOT_TIME_STEP = 0.05
 
-class ImageProcessor(threading.Thread):
-    def __init__(self, owner):
-        super(ImageProcessor, self).__init__()
-        self.stream = io.BytesIO()
-        self.event = threading.Event()
-        self.terminated = False
-        self.owner = owner
-        self.start()
+        # width and height of an image
+        width, height=64, 64
+        xCenter = 32 # pixels for when making mask out of an image
+        yCenter = 32
+        radius = 32
+        origin = np.array([xCenter, yCenter])
 
-    def run(self):
+        # Serial communication
+        ser = serial.Serial("/dev/serial0")
+        ser.baudrate = 115200
+                            
+        # Measure how long it takes to send data over
+        then = 0
 
-        def makeMask(n):
-            theta = np.linspace((2*math.pi)*(float(n)/64), (2*math.pi)*float(n+1)/64, 5)
-            xCenter = 32;
-            yCenter = 32;
-            radius = 32;
-            x = radius * np.cos(theta) + xCenter;
-            y = radius * np.sin(theta) + yCenter;
-            origin = np.array([xCenter, yCenter])
-            c = np.column_stack((x,y))
-            c = np.row_stack((c,origin))
-            poly_path=Path(c)
-            x, y = np.mgrid[:height, :width]
-            coors=np.hstack((x.reshape(-1, 1), y.reshape(-1,1)))
-            mask = poly_path.contains_points(coors)
-            z = mask.reshape(height, width)
-            z_final = np.where(z == False, 0, 1)
-            num_of_pixels_in_bin = np.count_nonzero(z_final == 1)
-            return z_final, num_of_pixels_in_bin
+        # Array to be storing the average values
+        current_avg = [0] * 64
 
-        try: 
-            # This method runs in a separate thread
+        with picamera.PiCamera() as camera:
+
+            camera.resolution = (64, 64)
+            camera.framerate = 24
+            time.sleep(2)
+
             while True:
-                # Wait for an image to be written to the stream
-                if self.event.wait(1):
-                    try:
-                        start=time.time()
-                        self.stream.seek(0)
-                        # Read the image and do some processing on it
-                        image = Image.open(self.stream).convert('L')
+                start = time.time()
 
-                        # Load it to the current array
-                        currentPic = image.load()
+                # Set previous to current
+                previous_avg = current_avg[:]
 
-                        # Set previous to current
-                        previous = current[:]
+                # Number of elements from one image to another
+                movement_length = 0
 
-                        finalPic = np.zeros(shape=(64,64))
+                # Checksum is 0
+                checksum = 0
 
-                        # Convert to 4 bit
-                        for x in range(0, 63):
-                            for y in range(0, 63):
-                                finalPic[x][y] = currentPic[x,y]/16
+                # Size of data to be sent over
+                size = 0
 
-                        for x in range(0, 63):
-                            matrix, numPixels = makeMask(x)     
-                            ray = np.multiply(matrix, finalPic)
-                            current[x] = int(round(ray.sum()/numPixels))
+                output = np.empty((64 * 64 * 3,), dtype=np.uint8)
+                camera.capture(output, 'rgb', use_video_port=True)
+                output = output.reshape((64, 64, 3))
 
-                        # Start with movement equal to false
-                        movement = False
+                # Correctly formatted output in RGB
+                image = output[:64, :64, :]
+                gray_scale = (image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16
 
-                        # Number of changed elements from one image to another
-                        movementLength = 0
+                for n in range(0, 63):
+                    matrix, numPixels = makeMask(n)
+                    ray = np.multiply(matrix, gray_scale)
+                    current_avg[n] = int(round(ray.sum()/numPixels))
 
-                        # Start with checksum equal to zero
-                        checksum = 0
+                #Count array difference between previous and current
+                movement_length = ((np.array(current_avg) - np.array(previous_avg)) > CONSTANT).sum()
 
-                        # Size of the data to be sent over
-                        size = 0
+                if movement_length > 0:
+                    
+                    print("movement")
 
-                        # Run a loop for array difference
-                        for x in range (0,63):
-                            if abs(current[x] - previous[x]) > CONSTANT:
-                                movementLength = movementLength + 1
-                                movement = True
+                    now = time.time()
 
-                        # Initializer
-                        if movement == True:
+                    global then
+                    time_diff = now - then
 
-                            now = time.time()
+                    if time_diff != now:
+                        #print(time_diff)
+                        if time_diff < ROBOT_TIME_STEP:
+                            time.sleep(ROBOT_TIME_STEP - time_diff)
+                    
+                    # Send the header
+                    ser.write(bytes(bytearray([255])))
+                    ser.write(bytes(bytearray([255])))
+                    ser.write(bytes(bytearray([1]))) 
 
-                            global then
-                            time_diff = now - then
+                    # Add it to the checksum
+                    checksum = 255 + 255 + 1 
+                    
+                    # Compute the size of the entire message
+                    size = HEADER_SIZE  + movement_length * DATA_SIZE + FOOTER_SIZE
 
-                            if time_diff != now:
-                                #print(time_diff)
-                                if time_diff < ROBOT_TIME_STEP:
-                                    time.sleep(ROBOT_TIME_STEP - time_diff)
-                            
-                            # Send the header
-                            ser.write(bytes(bytearray([255])))
-                            ser.write(bytes(bytearray([255])))
-                            ser.write(bytes(bytearray([1]))) 
+                    # Write the size of everything
+                    ser.write(bytes(bytearray([size])))
 
-                            # Add it to the checksum
-                            checksum = 255 + 255 + 1 
-                            
-                            # Compute the size of the entire message
-                            size = HEADER_SIZE  + movementLength * DATA_SIZE + FOOTER_SIZE
+                    # Add it to checksum again
+                    checksum += size
 
-                            
-                            # Write the size of everything
-                            ser.write(bytes(bytearray([size])))
+                    for x in range (0, 63):
+                        if abs(current_avg[x] - previous_avg[x]) > CONSTANT:
 
-                            # Add it to checksum again
-                            checksum += size
+                            # ID
+                            ser.write(bytes(bytearray([x])))
 
-                            for x in range (0, 63):
-                                if abs(current[x] - previous[x]) > CONSTANT:
-                                    #print(x)
+                            # low byte
+                            ser.write(bytes(bytearray([current_avg[x]])))
 
-                                    # ID
-                                    ser.write(bytes(bytearray([x])))
+                            # high byte
+                            ser.write(bytes(bytearray([0])))
 
-                                    # low byte
-                                    ser.write(bytes(bytearray([current[x]])))
+                            checksum += x + current_avg[x] + 0
 
-                                    # high byte
-                                    ser.write(bytes(bytearray([0])))
 
-                                    checksum += x + current[x] + 0
+                    # Module checksum and send it
+                    checksum = checksum % 256
 
-                            print ("----------------")
+                    # Lastly send the checksum
+                    ser.write(bytes(bytearray([checksum])))
 
-                            # Module checksum and send it
-                            checksum = checksum % 256
+                    # Starting timer to when the last info was sent
+                    
+                    then = time.time()
 
-                            # Lastly send the checksum
-                            ser.write(bytes(bytearray([checksum])))
+                end = time.time()
+                print (end - start)
 
-                            # Starting timer to when the last info was sent
-                            
-                            then = time.time()
-
-                        if movement != False:
-                            movement = False
-
-                        end = time.time()
-                        print (end - start)
-
-                    finally:
-                        # Reset the stream and event
-                        self.stream.seek(0)
-                        self.stream.truncate()
-                        self.event.clear()
-                        # Return ourselves to the available pool
-                        with self.owner.lock:
-                            self.owner.pool.append(self)
-        except KeyboardInterrupt:
-            pass
-            camera.stop_recording()
+            # Close the serial
             ser.close
-
-class ProcessOutput(object):
-    def __init__(self):
-        self.done = False
-        # Construct a pool of 4 image processors along with a lock
-        # to control access between threads
-        self.lock = threading.Lock()
-        self.pool = [ImageProcessor(self) for i in range(1)]
-        self.processor = None
-
-    def write(self, buf):
-        if buf.startswith(b'\xff\xd8'):
-            # New frame; set the current processor going and grab
-            # a spare one
-            if self.processor:
-                self.processor.event.set()
-            with self.lock:
-                if self.pool:
-                    self.processor = self.pool.pop()
-                else:
-                    # No processor's available, we'll have to skip
-                    # this frame; you may want to print a warning
-                    # here to see whether you hit this case
-                    self.processor = None
-        if self.processor:
-            self.processor.stream.write(buf)
-
-    def flush(self):
-        # When told to flush (this indicates end of recording), shut
-        # down in an orderly fashion. First, add the current processor
-        # back to the pool
-        if self.processor:
-            with self.lock:
-                self.pool.append(self.processor)
-                self.processor = None
-        # Now, empty the pool, joining each thread as we go
-        while True:
-            proc = None
-            with self.lock:
-                try:
-                    proc = self.pool.pop()
-                except IndexError:
-                    pass # pool is empty
-            proc.terminated = True 
-            proc.join()
-
-with picamera.PiCamera(resolution='VGA') as camera:
-    camera.resolution = (64,64)
-    #camera.color_effects = (128,128)
-    camera.start_preview()
-    time.sleep(2)
-    output = ProcessOutput()
-    camera.start_recording(output, format='mjpeg')
-    while not output.done:
-        camera.wait_recording(1)
-    camera.stop_recording()
-    ser.close
