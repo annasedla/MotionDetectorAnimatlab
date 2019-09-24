@@ -17,154 +17,151 @@ from matplotlib.path import Path
 # print settings
 np.set_printoptions(threshold=sys.maxsize)
 
-class ImageProcessor():
-     
-    def makeMask(self, n):
-        theta = np.linspace((2*math.pi)*(float(n)/64), (2*math.pi)*float(n+1)/64, 5)
-        xCenter = 32;
-        yCenter = 32;
-        radius = 32;
-        x = radius * np.cos(theta) + xCenter;
-        y = radius * np.sin(theta) + yCenter;
-        origin = np.array([xCenter, yCenter])
-        c = np.column_stack((x,y))
-        c = np.row_stack((c,origin))
-        poly_path=Path(c)
-        x, y = np.mgrid[:height, :width]
-        coors=np.hstack((x.reshape(-1, 1), y.reshape(-1,1)))
-        mask = poly_path.contains_points(coors)
-        z = mask.reshape(height, width)
-        z_final = np.where(z == False, 0, 1)
-        num_of_pixels_in_bin = np.count_nonzero(z_final == 1)
-        return z_final, num_of_pixels_in_bin
+width,height = 64,64
+xCenter = 32
+yCenter = 32
+radius = 32
+x, y = np.mgrid[:height, :width]
+coors=np.hstack((x.reshape(-1, 1), y.reshape(-1,1)))
 
-    if __name__ == '__main__':
-        main()
+# CONSTANTS
+# Constant for pixel differences
+CONSTANT = 1
 
-    def main():
+# Size of the header for a message to be sent over
+HEADER_SIZE = 4
+DATA_SIZE = 3
+FOOTER_SIZE = 1
+ROBOT_TIME_STEP = 0.05
 
-        # CONSTANTS
-        # Constant for pixel differences
-        CONSTANT = 1
+# Serial communication
+ser = serial.Serial("/dev/serial0")
+ser.baudrate = 115200
 
-        # Size of the header for a message to be sent over
-        HEADER_SIZE = 4
-        DATA_SIZE = 3
-        FOOTER_SIZE = 1
-        ROBOT_TIME_STEP = 0.05
+ 
+def makeMask(n, gray_scale):
 
-        # width and height of an image
-        width, height=64, 64
-        xCenter = 32 # pixels for when making mask out of an image
-        yCenter = 32
-        radius = 32
-        origin = np.array([xCenter, yCenter])
+    theta = np.linspace((2*math.pi)*(float(n)/64), (2*math.pi)*float(n+1)/64, 5)
+    c = np.row_stack((np.column_stack((radius * np.cos(theta) + xCenter,radius * np.sin(theta) + yCenter)),
+                      np.array([xCenter, yCenter])))
+    
+    z = Path(c).contains_points(coors).reshape(height, width)
+    z_final = np.where(z == False, 0, 1)
+    num_of_pixels_in_bin = np.count_nonzero(z_final == 1)
+    ray = np.multiply(z_final, gray_scale)
+    current_avg_at_loc = int(round(ray.sum()/num_of_pixels_in_bin))
 
-        # Serial communication
-        ser = serial.Serial("/dev/serial0")
-        ser.baudrate = 115200
-                            
-        # Measure how long it takes to send data over
-        then = 0
+    return current_avg_at_loc
 
-        # Array to be storing the average values
-        current_avg = [0] * 64
+def main():              
+    # Measure how long it takes to send data over
+    then = 0
 
-        with picamera.PiCamera() as camera:
+    # Array to be storing the average values
+    current_avg = [0] * 64
 
-            camera.resolution = (64, 64)
-            camera.framerate = 24
-            time.sleep(2)
+    with picamera.PiCamera() as camera:
 
-            while True:
-                start = time.time()
+        camera.resolution = (64, 64)
+        camera.framerate = 24
+        time.sleep(2)
 
-                # Set previous to current
-                previous_avg = current_avg[:]
+        while True:
+            start = time.time()
 
-                # Number of elements from one image to another
-                movement_length = 0
+            # Set previous to current
+            previous_avg = current_avg[:]
 
-                # Checksum is 0
-                checksum = 0
+            # Number of elements from one image to another
+            movement_length = 0
 
-                # Size of data to be sent over
-                size = 0
+            # Checksum is 0
+            checksum = 0
 
-                output = np.empty((64 * 64 * 3,), dtype=np.uint8)
-                camera.capture(output, 'rgb', use_video_port=True)
-                output = output.reshape((64, 64, 3))
+            # Size of data to be sent over
+            size = 0
 
-                # Correctly formatted output in RGB
-                image = output[:64, :64, :]
-                gray_scale = (image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16
+            output = np.empty((64 * 64 * 3,), dtype=np.uint8)
+            camera.capture(output, 'rgb', use_video_port=True)
+            output = output.reshape((64, 64, 3))
 
-                for n in range(0, 63):
-                    matrix, numPixels = makeMask(n)
-                    ray = np.multiply(matrix, gray_scale)
-                    current_avg[n] = int(round(ray.sum()/numPixels))
+            # Correctly formatted output in RGB
+            image = output[:64, :64, :]
+            gray_scale = (image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16
 
-                #Count array difference between previous and current
-                movement_length = ((np.array(current_avg) - np.array(previous_avg)) > CONSTANT).sum()
+##            f = lambda x: makeMask(x, gray_scale)
+##
+##            current_avg = makeMask(f(current_avg))
 
-                if movement_length > 0:
-                    
-                    print("movement")
+            for n in range(0, 63):
+                current_avg[n] = makeMask(n, gray_scale)
 
-                    now = time.time()
+            #Count array difference between previous and current
+            movement_length = ((np.array(current_avg) - np.array(previous_avg)) > CONSTANT).sum()
 
-                    global then
-                    time_diff = now - then
+            if movement_length > 0:
+                
+                print("movement")
 
-                    if time_diff != now:
-                        #print(time_diff)
-                        if time_diff < ROBOT_TIME_STEP:
-                            time.sleep(ROBOT_TIME_STEP - time_diff)
-                    
-                    # Send the header
-                    ser.write(bytes(bytearray([255])))
-                    ser.write(bytes(bytearray([255])))
-                    ser.write(bytes(bytearray([1]))) 
+                now = time.time()
 
-                    # Add it to the checksum
-                    checksum = 255 + 255 + 1 
-                    
-                    # Compute the size of the entire message
-                    size = HEADER_SIZE  + movement_length * DATA_SIZE + FOOTER_SIZE
+                global then
+                time_diff = now - then
 
-                    # Write the size of everything
-                    ser.write(bytes(bytearray([size])))
+                if time_diff != now:
+                    #print(time_diff)
+                    if time_diff < ROBOT_TIME_STEP:
+                        time.sleep(ROBOT_TIME_STEP - time_diff)
+                
+                # Send the header
+                ser.write(bytes(bytearray([255])))
+                ser.write(bytes(bytearray([255])))
+                ser.write(bytes(bytearray([1]))) 
 
-                    # Add it to checksum again
-                    checksum += size
+                # Add it to the checksum
+                checksum = 255 + 255 + 1 
+                
+                # Compute the size of the entire message
+                size = HEADER_SIZE  + movement_length * DATA_SIZE + FOOTER_SIZE
 
-                    for x in range (0, 63):
-                        if abs(current_avg[x] - previous_avg[x]) > CONSTANT:
+                # Write the size of everything
+                ser.write(bytes(bytearray([size])))
 
-                            # ID
-                            ser.write(bytes(bytearray([x])))
+                # Add it to checksum again
+                checksum += size
 
-                            # low byte
-                            ser.write(bytes(bytearray([current_avg[x]])))
+                for x in range (0, 63):
+                    if abs(current_avg[x] - previous_avg[x]) > CONSTANT:
 
-                            # high byte
-                            ser.write(bytes(bytearray([0])))
+                        # ID
+                        ser.write(bytes(bytearray([x])))
 
-                            checksum += x + current_avg[x] + 0
+                        # low byte
+                        ser.write(bytes(bytearray([current_avg[x]])))
+
+                        # high byte
+                        ser.write(bytes(bytearray([0])))
+
+                        checksum += x + current_avg[x] + 0
 
 
-                    # Module checksum and send it
-                    checksum = checksum % 256
+                # Module checksum and send it
+                checksum = checksum % 256
 
-                    # Lastly send the checksum
-                    ser.write(bytes(bytearray([checksum])))
+                # Lastly send the checksum
+                ser.write(bytes(bytearray([checksum])))
 
-                    # Starting timer to when the last info was sent
-                    
-                    then = time.time()
+                # Starting timer to when the last info was sent
+                
+                then = time.time()
 
-                end = time.time()
-                print (end - start)
+            end = time.time()
+            print (end - start)
 
-            # Close the serial
-            ser.close
+        # Close the serial
+        ser.close
+
+if __name__ == '__main__':
+    main()
+
+
