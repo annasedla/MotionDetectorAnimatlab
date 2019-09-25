@@ -17,12 +17,16 @@ from matplotlib.path import Path
 # print settings
 np.set_printoptions(threshold=sys.maxsize)
 
+# Mask settings
 width,height = 64,64
 xCenter = 32
 yCenter = 32
 radius = 32
 x, y = np.mgrid[:height, :width]
 coors=np.hstack((x.reshape(-1, 1), y.reshape(-1,1)))
+
+z_final_list = []
+num_of_pixels_in_bin_list = []
 
 # CONSTANTS
 # Constant for pixel differences
@@ -39,7 +43,7 @@ ser = serial.Serial("/dev/serial0")
 ser.baudrate = 115200
 
  
-def makeMask(n, gray_scale):
+def makeMask(n):
 
     theta = np.linspace((2*math.pi)*(float(n)/64), (2*math.pi)*float(n+1)/64, 5)
     c = np.row_stack((np.column_stack((radius * np.cos(theta) + xCenter,radius * np.sin(theta) + yCenter)),
@@ -48,10 +52,8 @@ def makeMask(n, gray_scale):
     z = Path(c).contains_points(coors).reshape(height, width)
     z_final = np.where(z == False, 0, 1)
     num_of_pixels_in_bin = np.count_nonzero(z_final == 1)
-    ray = np.multiply(z_final, gray_scale)
-    current_avg_at_loc = int(round(ray.sum()/num_of_pixels_in_bin))
 
-    return current_avg_at_loc
+    return z_final, num_of_pixels_in_bin
 
 def main():              
     # Measure how long it takes to send data over
@@ -59,6 +61,12 @@ def main():
 
     # Array to be storing the average values
     current_avg = [0] * 64
+
+    # Populate the mask array
+    for n in range(0, 63):
+        z_final, num_of_pixels_in_bin = makeMask(n)
+        z_final_list.append(z_final)
+        num_of_pixels_in_bin_list.append(num_of_pixels_in_bin)
 
     with picamera.PiCamera() as camera:
 
@@ -89,12 +97,16 @@ def main():
             image = output[:64, :64, :]
             gray_scale = (image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16
 
-##            f = lambda x: makeMask(x, gray_scale)
-##
-##            current_avg = makeMask(f(current_avg))
+            current_avg = np.linspace(0,63,num=64)
 
-            for n in range(0, 63):
-                current_avg[n] = makeMask(n, gray_scale)
+            f = lambda x : int(round((np.multiply(z_final_list[x], gray_scale)).sum()
+                                     /num_of_pixels_in_bin_list[x]))
+
+            np.apply_along_axis(f, 0, current_avg)
+
+##            for n in range(0, 63):
+##                ray = np.multiply(z_final_list[n], gray_scale)
+##                current_avg[n] = int(round(ray.sum()/num_of_pixels_in_bin_list[n]))
 
             #Count array difference between previous and current
             movement_length = ((np.array(current_avg) - np.array(previous_avg)) > CONSTANT).sum()
