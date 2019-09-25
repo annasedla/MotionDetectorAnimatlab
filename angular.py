@@ -97,16 +97,16 @@ def main():
             image = output[:64, :64, :]
             gray_scale = (image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16
 
-            current_avg = np.linspace(0,63,num=64)
+##            current_avg = np.linspace(0,63,num=64)
 
-            f = lambda x : int(round((np.multiply(z_final_list[x], gray_scale)).sum()
-                                     /num_of_pixels_in_bin_list[x]))
+##            f = lambda x : int(round((np.multiply(z_final_list[x], gray_scale)).sum()
+##                                     /num_of_pixels_in_bin_list[x]))
+##
+##            np.apply_along_axis(f, 0, current_avg)
 
-            np.apply_along_axis(f, 0, current_avg)
-
-##            for n in range(0, 63):
-##                ray = np.multiply(z_final_list[n], gray_scale)
-##                current_avg[n] = int(round(ray.sum()/num_of_pixels_in_bin_list[n]))
+            for n in range(0, 63):
+                ray = np.multiply(z_final_list[n], gray_scale)
+                current_avg[n] = int(round(ray.sum()/num_of_pixels_in_bin_list[n]))
 
             #Count array difference between previous and current
             movement_length = ((np.array(current_avg) - np.array(previous_avg)) > CONSTANT).sum()
