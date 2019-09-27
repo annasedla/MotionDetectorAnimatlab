@@ -55,7 +55,8 @@ def makeMask(n):
 
     return z_final, num_of_pixels_in_bin
 
-def main():              
+def main():
+    
     # Measure how long it takes to send data over
     then = 0
 
@@ -70,7 +71,7 @@ def main():
 
     with picamera.PiCamera() as camera:
 
-        camera.resolution = (64, 64)
+        camera.resolution = (128, 128)
         camera.framerate = 24
         time.sleep(2)
 
@@ -79,6 +80,7 @@ def main():
 
             # Set previous to current
             previous_avg = current_avg[:]
+            current_avg = [0] * 64
 
             # Number of elements from one image to another
             movement_length = 0
@@ -89,13 +91,13 @@ def main():
             # Size of data to be sent over
             size = 0
 
-            output = np.empty((64 * 64 * 3,), dtype=np.uint8)
+            output = np.empty((128 * 128 * 3,), dtype=np.uint8)
             camera.capture(output, 'rgb', use_video_port=True)
-            output = output.reshape((64, 64, 3))
+            output = output.reshape((128, 128, 3))
 
             # Correctly formatted output in RGB
-            image = output[:64, :64, :]
-            gray_scale = (image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16
+            image = output[:128, :128, :]
+            gray_scale = ((image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16).astype(int)
 
 ##            current_avg = np.linspace(0,63,num=64)
 
@@ -104,12 +106,39 @@ def main():
 ##
 ##            np.apply_along_axis(f, 0, current_avg)
 
+            # only select columns and rows from 33 to 96 (the middle portion of the image)
+
+            row_idx = np.linspace(32,95, num = 64).astype(int)
+            col_idx = np.linspace(33,96, num = 64).astype(int)
+            gray_scale = gray_scale[row_idx[:, None], col_idx]
+
+##            a = np.array([[0,1,2,3],[4,5,6,7],[8,9,10,11],[12,13,14,15]])
+##
+##            row_idx = np.array([1,2])
+##            col_idx = np.array([2,3])
+##
+##            a = a[row_idx[:, None], col_idx]
+##            print(a)
+
             for n in range(0, 63):
                 ray = np.multiply(z_final_list[n], gray_scale)
-                current_avg[n] = int(round(ray.sum()/num_of_pixels_in_bin_list[n]))
+                current_avg[n] = round(ray.sum()/num_of_pixels_in_bin_list[n])
+
+            # Change this array to integer arrray
+            current_avg = np.array(current_avg).astype(int)
+
+            print(current_avg)
+            print(previous_avg)
 
             #Count array difference between previous and current
-            movement_length = ((np.array(current_avg) - np.array(previous_avg)) > CONSTANT).sum()
+            movement_length = ((current_avg - previous_avg) > CONSTANT).sum()
+
+            print(movement_length)
+
+            movement_length = ((previous_avg - current_avg) > CONSTANT).sum()
+
+            print(movement_length)
+
 
             if movement_length > 0:
                 
@@ -168,6 +197,7 @@ def main():
                 then = time.time()
 
             end = time.time()
+            time.sleep(5)
             print (end - start)
 
         # Close the serial
