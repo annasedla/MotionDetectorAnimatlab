@@ -14,7 +14,6 @@ import sys
 import struct
 import math
 from matplotlib.path import Path
-
 # print settings
 np.set_printoptions(threshold=sys.maxsize)
 
@@ -37,7 +36,10 @@ CONSTANT = 1
 HEADER_SIZE = 4
 DATA_SIZE = 3
 FOOTER_SIZE = 1
-ROBOT_TIME_STEP = 0.1
+ROBOT_TIME_STEP = 0.05
+
+# Measure how long it takes to send data over
+then = 0
 
 # Serial communication
 ser = serial.Serial("/dev/serial0")
@@ -57,26 +59,46 @@ def makeMask(n):
     return z_final, num_of_pixels_in_bin
 
 def main():
-    
-    # Measure how long it takes to send data over
-    then = 0
 
     # Array to be storing the average values
     current_avg = [0] * 64
 
+    # Set up blob detector
+    detector = cv2.SimpleBlobDetector()
+    params = cv2.SimpleBlobDetector_Params()
+
+    params.filterByCircularity = True
+
     # Populate the mask array
-    for n in range(0, 63):
+    for n in range(0, 64):
         z_final, num_of_pixels_in_bin = makeMask(n)
         z_final_list.append(z_final)
         num_of_pixels_in_bin_list.append(num_of_pixels_in_bin)
 
+    # Figure out the center of the camera
+    with picamera.PiCamera() as camera:
+
+        camera.resolution = (128, 128)
+        camera.framerate = 24
+        time.sleep(2)
+        camera.capture('foo.jpg')
+
+    im = cv2.imread("foo.jpg", cv2.IMREAD_GRAYSCALE)
+    keypoints = detector.detect(im)
+
+    im_with_keypoints = cv2.drawKeypoints(im, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+    cv2.imshow("KEYPOINTS", im_with_keypoints)
+    cv2.waitKey(0)
+    
     with picamera.PiCamera() as camera:
 
         camera.resolution = (128, 128)
         camera.framerate = 24
         time.sleep(2)
 
-        while True:
+        i = 0
+
+        while i < 1:
             start = time.time()
 
             # Set previous to current
@@ -100,6 +122,12 @@ def main():
             image = output[:128, :128, :]
             gray_scale = ((image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16).astype(int)
 
+            keypoints = detector.detect(gray_scale)
+
+            print('keypionts', keypoints)
+            
+##            print(gray_scale)
+
 ##            current_avg = np.linspace(0,63,num=64)
 
 ##            f = lambda x : int(round((np.multiply(z_final_list[x], gray_scale)).sum()
@@ -112,6 +140,7 @@ def main():
             row_idx = np.linspace(32,95, num = 64).astype(int)
             col_idx = np.linspace(33,96, num = 64).astype(int)
             gray_scale = gray_scale[row_idx[:, None], col_idx]
+            print(gray_scale)
 
 ##            a = np.array([[0,1,2,3],[4,5,6,7],[8,9,10,11],[12,13,14,15]])
 ##
@@ -121,28 +150,29 @@ def main():
 ##            a = a[row_idx[:, None], col_idx]
 ##            print(a)
 
-            for n in range(0, 63):
-                ray = np.multiply(z_final_list[n], gray_scale)
+            for n in range(0, 64):
+                ray = np.multiply(gray_scale, z_final_list[n])
                 current_avg[n] = round(ray.sum()/num_of_pixels_in_bin_list[n])
+                if n == 63:
+                    print ray
+                print(n, ': ', current_avg[n])
 
             # Change this array to integer arrray
             current_avg = np.array(current_avg).astype(int)
 
             #Count array difference between previous and current
-            movement_length = ((current_avg - previous_avg) > CONSTANT).sum()
-
-            if (movement_length == 0):
-                movement_length = ((previous_avg - current_avg) > CONSTANT).sum()
-
+            for x in range (0, 64):
+                if abs(current_avg[x] - previous_avg[x]) > CONSTANT:
+                    movement_length = movement_length + 1;
 
             if movement_length > 0:
                 
-##                print("movement")
-
                 now = time.time()
 
                 global then
                 time_diff = now - then
+
+                print(time_diff)
 
                 if time_diff != now:
                     #print(time_diff)
@@ -150,9 +180,9 @@ def main():
                         time.sleep(ROBOT_TIME_STEP - time_diff)
                 
                 # Send the header
-                ser.write(bytes(bytearray([255])))
-                ser.write(bytes(bytearray([255])))
-                ser.write(bytes(bytearray([1])))
+                ser.write(bytes([255]))
+                ser.write(bytes([255]))
+                ser.write(bytes([1]))
                 
                 # Add it to the checksum
                 checksum = 255 + 255 + 1 
@@ -161,39 +191,37 @@ def main():
                 size = HEADER_SIZE  + movement_length * DATA_SIZE + FOOTER_SIZE
 
                 # Write the size of everything
-                ser.write(bytes(bytearray([size])))
+                ser.write(bytes([size]))
 
                 # Add it to checksum again
                 checksum += size
 
-                for x in range (0, 63):
+                for x in range (0, 64):
                     if abs(current_avg[x] - previous_avg[x]) > CONSTANT:
 
                         # ID
-                        ser.write(bytes(bytearray([x])))
+                        ser.write(bytes([x]))
 
                         # low byte
-                        ser.write(bytes(bytearray([current_avg[x]])))
+                        ser.write(bytes([current_avg[x]]))
 ##
                         # high byte
-                        ser.write(bytes(bytearray([0])))
+                        ser.write(bytes([0]))
 
-                        checksum += x + current_avg[x] + 0
-
+                        checksum = checksum + x + current_avg[x] + 0
 
                 # Module checksum and send it
                 checksum = checksum % 256
 
                 # Lastly send the checksum
-                ser.write(bytes(bytearray([checksum])))
+                ser.write(bytes([checksum]))
 
                 # Starting timer to when the last info was sent
                 
                 then = time.time()
 
             end = time.time()
-##            print (end - start)
-
+            i = i + 1
         # Close the serial
         ser.close
 

@@ -138,7 +138,6 @@ def main():
             if movement_length > 0:
                 
 ##                print("movement")
-
                 now = time.time()
 
                 global then
@@ -150,9 +149,9 @@ def main():
                         time.sleep(ROBOT_TIME_STEP - time_diff)
                 
                 # Send the header
-                ser.write(bytes(bytearray([255])))
-                ser.write(bytes(bytearray([255])))
-                ser.write(bytes(bytearray([1])))
+                ser.write(bytes(255))
+                ser.write(bytes(255))
+                ser.write(bytes(1))
                 
                 # Add it to the checksum
                 checksum = 255 + 255 + 1 
@@ -161,7 +160,7 @@ def main():
                 size = HEADER_SIZE  + movement_length * DATA_SIZE + FOOTER_SIZE
 
                 # Write the size of everything
-                ser.write(bytes(bytearray([size])))
+                ser.write(bytes([size]))
 
                 # Add it to checksum again
                 checksum += size
@@ -170,13 +169,13 @@ def main():
                     if abs(current_avg[x] - previous_avg[x]) > CONSTANT:
 
                         # ID
-                        ser.write(bytes(bytearray([x])))
+                        ser.write(bytes([x]))
 
                         # low byte
-                        ser.write(bytes(bytearray([current_avg[x]])))
+                        ser.write(bytes([current_avg[x]]))
 ##
                         # high byte
-                        ser.write(bytes(bytearray([0])))
+                        ser.write(bytes([0]))
 
                         checksum += x + current_avg[x] + 0
 
@@ -185,7 +184,7 @@ def main():
                 checksum = checksum % 256
 
                 # Lastly send the checksum
-                ser.write(bytes(bytearray([checksum])))
+                ser.write(bytes([checksum]))
 
                 # Starting timer to when the last info was sent
                 
