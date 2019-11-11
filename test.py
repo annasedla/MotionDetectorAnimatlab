@@ -9,7 +9,7 @@ import picamera
 from PIL import Image
 import numpy as np
 import argparse
-import cv2
+##import cv2
 import sys
 import struct
 import math
@@ -30,7 +30,7 @@ num_of_pixels_in_bin_list = []
 
 # CONSTANTS
 # Constant for pixel differences
-CONSTANT = 1
+CONSTANT = 0
 
 # Size of the header for a message to be sent over
 HEADER_SIZE = 4
@@ -64,10 +64,10 @@ def main():
     current_avg = [0] * 64
 
     # Set up blob detector
-    detector = cv2.SimpleBlobDetector()
-    params = cv2.SimpleBlobDetector_Params()
-
-    params.filterByCircularity = True
+##    detector = cv2.SimpleBlobDetector()
+##    params = cv2.SimpleBlobDetector_Params()
+##
+##    params.filterByCircularity = True
 
     # Populate the mask array
     for n in range(0, 64):
@@ -76,20 +76,26 @@ def main():
         num_of_pixels_in_bin_list.append(num_of_pixels_in_bin)
 
     # Figure out the center of the camera
-    with picamera.PiCamera() as camera:
-
-        camera.resolution = (128, 128)
-        camera.framerate = 24
-        time.sleep(2)
-        camera.capture('foo.jpg')
-
-    im = cv2.imread("foo.jpg", cv2.IMREAD_GRAYSCALE)
-    keypoints = detector.detect(im)
-
-    im_with_keypoints = cv2.drawKeypoints(im, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-    cv2.imshow("KEYPOINTS", im_with_keypoints)
-    cv2.waitKey(0)
-    
+##    with picamera.PiCamera() as camera:
+##
+##        camera.resolution = (128, 128)
+##        camera.framerate = 24
+##        time.sleep(2)
+##        camera.capture('foo.jpg')
+##
+##    im = cv2.imread("foo.jpg", cv2.IMREAD_GRAYSCALE)
+##    keypoints = detector.detect(im)
+##
+##    for keypoint in keypoints:
+##        x = keypoint.pt[0]
+##        y = keypoint.pt[1]
+##
+##    print("x: ", x, ", y: ", y )
+##
+##    im_with_keypoints = cv2.drawKeypoints(im, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+##    cv2.imshow("KEYPOINTS", im_with_keypoints)
+##    cv2.waitKey(0)
+##    
     with picamera.PiCamera() as camera:
 
         camera.resolution = (128, 128)
@@ -98,7 +104,7 @@ def main():
 
         i = 0
 
-        while i < 1:
+        while True:
             start = time.time()
 
             # Set previous to current
@@ -121,10 +127,6 @@ def main():
             # Correctly formatted output in RGB
             image = output[:128, :128, :]
             gray_scale = ((image[:,:,0] * 0.3 + image[:,:,1] * 0.59 + image[:,:,2] * 0.11)/16).astype(int)
-
-            keypoints = detector.detect(gray_scale)
-
-            print('keypionts', keypoints)
             
 ##            print(gray_scale)
 
@@ -137,10 +139,9 @@ def main():
 
             # only select columns and rows from 33 to 96 (the middle portion of the image)
 
-            row_idx = np.linspace(32,95, num = 64).astype(int)
-            col_idx = np.linspace(33,96, num = 64).astype(int)
+            row_idx = np.linspace(43,106, num = 64).astype(int)
+            col_idx = np.linspace(35,98, num = 64).astype(int)
             gray_scale = gray_scale[row_idx[:, None], col_idx]
-            print(gray_scale)
 
 ##            a = np.array([[0,1,2,3],[4,5,6,7],[8,9,10,11],[12,13,14,15]])
 ##
@@ -153,9 +154,9 @@ def main():
             for n in range(0, 64):
                 ray = np.multiply(gray_scale, z_final_list[n])
                 current_avg[n] = round(ray.sum()/num_of_pixels_in_bin_list[n])
-                if n == 63:
-                    print ray
-                print(n, ': ', current_avg[n])
+##                if n == 6:
+##                    print (ray)
+##                print(n, ': ', current_avg[n])
 
             # Change this array to integer arrray
             current_avg = np.array(current_avg).astype(int)
