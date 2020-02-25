@@ -20,7 +20,6 @@ import cv2
 with picamera.PiCamera() as camera:
 
     camera.resolution = (128, 128)
-    camera.framerate = 24
     time.sleep(2)
     camera.capture('foo.jpg')
 
@@ -33,11 +32,20 @@ params.filterByCircularity = True
 im = cv2.imread("foo.jpg", cv2.IMREAD_GRAYSCALE)
 keypoints = detector.detect(im)
 
+x = 0
+y = 0
+
 for keypoint in keypoints:
     x = keypoint.pt[0]
     y = keypoint.pt[1]
 
+print('X and Y center points:')
 print('x: ', x, ', y: ', y )
+print()
+print('Row range:')
+print(round(x-32), ', ', round(x+32))
+print('Column range:')
+print(round(y-32), ', ', round(y+32))
 
 im_with_keypoints = cv2.drawKeypoints(im, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 cv2.imshow("KEYPOINTS", im_with_keypoints)

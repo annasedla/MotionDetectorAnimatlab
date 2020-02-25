@@ -103,8 +103,8 @@ def main():
 
             # only select columns and rows from 33 to 96 (the middle portion of the image)
 
-            row_idx = np.linspace(43,106, num = 64).astype(int)
-            col_idx = np.linspace(35,98, num = 64).astype(int)
+            row_idx = np.linspace(35,99, num = 64).astype(int)
+            col_idx = np.linspace(37,101, num = 64).astype(int)
             gray_scale = gray_scale[row_idx[:, None], col_idx]
 
 
